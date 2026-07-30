@@ -23,7 +23,13 @@ from . import HikAxProDataUpdateCoordinator
 from .const import DATA_COORDINATOR, DOMAIN
 from .hik_device import HikDevice
 from .entity_id import build_entity_id
-from .model import DetectorType, Zone, zone_device_model
+from .model import (
+    MOTION_DETECTOR_TYPES,
+    DetectorType,
+    Status,
+    Zone,
+    zone_device_model,
+)
 from .host_entities import build_host_binary_sensors
 from .peripheral_entities import (
     build_peripheral_binary_sensors,
@@ -141,6 +147,13 @@ async def async_setup_entry(
                     devices.append(
                         HikMagnetShockDetector(coordinator, zone.zone, entry.entry_id)
                     )
+            if (
+                detector_type in MOTION_DETECTOR_TYPES
+                and zone.zone.status is not None
+            ):
+                devices.append(
+                    HikMotionDetector(coordinator, zone.zone, entry.entry_id)
+                )
             if zone.zone.tamper_evident is not None:
                 devices.append(
                     HikTamperDetection(coordinator, zone.zone, entry.entry_id)
@@ -483,6 +496,59 @@ class HikMagnetTiltDetector(CoordinatorEntity, HikDevice, BinarySensorEntity):
             ].magnet_shock_current_status.magnet_tilt_status
         else:
             return None
+
+
+class HikMotionDetector(CoordinatorEntity, HikDevice, BinarySensorEntity):
+    """Representation of Hikvision PIR / motion detector."""
+
+    coordinator: HikAxProDataUpdateCoordinator
+
+    def __init__(
+        self, coordinator: HikAxProDataUpdateCoordinator, zone: Zone, entry_id: str
+    ) -> None:
+        """Create the entity with a DataUpdateCoordinator."""
+        super().__init__(coordinator)
+        self.zone = zone
+        self._ref_id = entry_id
+        self._attr_unique_id = f"{self.coordinator.device_name}-motion-{zone.id}"
+        self._attr_device_class = BinarySensorDeviceClass.MOTION
+        self._attr_has_entity_name = True
+        self.entity_id = build_entity_id(
+            SENSOR_DOMAIN, coordinator.device_name, "motion", zone.id
+        )
+
+    @property
+    def name(self) -> str | None:
+        return "Motion"
+
+    @callback
+    def _handle_coordinator_update(self) -> None:
+        """Handle updated data from the coordinator."""
+        if (
+            self.coordinator.zones
+            and self.coordinator.zones[self.zone.id]
+            and self.coordinator.zones[self.zone.id].status is not None
+        ):
+            triggered = (
+                self.coordinator.zones[self.zone.id].status is Status.TRIGGER
+            )
+            self._attr_is_on = triggered
+            self._attr_available = True
+        else:
+            self._attr_is_on = None
+            self._attr_available = False
+        self.async_write_ha_state()
+
+    @property
+    def is_on(self) -> bool | None:
+        """Return true if the binary sensor is on."""
+        if (
+            self.coordinator.zones
+            and self.coordinator.zones[self.zone.id]
+            and self.coordinator.zones[self.zone.id].status is not None
+        ):
+            return self.coordinator.zones[self.zone.id].status is Status.TRIGGER
+        return None
 
 
 class HikTamperDetection(CoordinatorEntity, HikDevice, BinarySensorEntity):

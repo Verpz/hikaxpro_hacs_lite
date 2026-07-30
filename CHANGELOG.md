@@ -1,5 +1,8 @@
 # Changelog
 
+## v3.4.0
+- **feat**: PIR / motion detector zones expose `binary_sensor` Motion (`device_class: motion`) from zone status `trigger` (#170)
+
 ## v3.3.2
 - **feat**: one-key / panic alarm via `HostControlCap.isSptOneKeyAlarmCtrl` — service `one_key_alarm`, panel buttons when supported (#160, #164)
 - **feat**: load `HostControlCap` at setup; hide per-siren control switches when `isSptSirenCtrl` is false

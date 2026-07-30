@@ -120,6 +120,25 @@ class DetectorType(Enum):
     OTHER = "other"
 
 
+MOTION_DETECTOR_TYPES: frozenset[DetectorType] = frozenset(
+    {
+        DetectorType.PIR_DETECTOR,
+        DetectorType.PIRCAM_DETECTOR,
+        DetectorType.MOTION_DETECTOR,
+        DetectorType.DUAL_TECHNOLOGY_MOTION_DETECTOR,
+        DetectorType.TRIPLE_TECHNOLOGY_DETECTOR,
+        DetectorType.INDOOR_DUAL_TECHNOLOGY_DETECTOR,
+        DetectorType.WIRELESS_TRI_TECH_DETECTOR,
+        DetectorType.IR_CURTAIN_DETECTOR,
+        DetectorType.WIRELESS_PIRCURTAIN_DETECTOR,
+        DetectorType.WIRELESS_DTAMCURTAIN_DETECTOR,
+        DetectorType.WIRELESS_PIRCEILING_DETECTOR,
+        DetectorType.WIRELESS_DOUBLE_PIR_DETECTOR,
+        DetectorType.WIRELESS_180_PANORAMIC_DETECTOR,
+    }
+)
+
+
 def zone_device_model(
     model: Optional[str], detector_type: Optional[DetectorType]
 ) -> str:
