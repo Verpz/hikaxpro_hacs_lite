@@ -45,7 +45,9 @@ async def async_setup_entry(
             )
             devices.append(HikRelaySwitch(coordinator, switch, entry.entry_id))
     for siren_id, siren in coordinator.sirens.items():
-        # Skip devices already marked unsupported after a prior control attempt.
+        # Skip when HostControlCap says siren control is unsupported, or after notSupport.
+        if coordinator.siren_ctrl_supported is False:
+            continue
         if coordinator.siren_control_supported.get(siren_id) is False:
             continue
         device_registry.async_get_or_create(

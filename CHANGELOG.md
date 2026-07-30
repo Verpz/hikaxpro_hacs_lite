@@ -1,5 +1,9 @@
 # Changelog
 
+## v3.3.2
+- **feat**: one-key / panic alarm via `HostControlCap.isSptOneKeyAlarmCtrl` — service `one_key_alarm`, panel buttons when supported (#160, #164)
+- **feat**: load `HostControlCap` at setup; hide per-siren control switches when `isSptSirenCtrl` is false
+
 ## v3.3.1
 - **fix**: accept `relatedKeypadNo` as a list (RS485 R3 wireless zones) and `accessModuleType` `RS485R3WirelessRecv` #203
 

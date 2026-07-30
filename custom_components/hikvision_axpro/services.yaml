@@ -96,3 +96,21 @@ control_siren:
       required: false
       selector:
         text:
+one_key_alarm:
+  name: One-key alarm
+  description: >
+    Trigger or clear the panel one-key/panic alarm when HostControlCap
+    reports isSptOneKeyAlarmCtrl (loud — use with care)
+  fields:
+    enabled:
+      name: Trigger alarm
+      description: true to trigger, false to clear/silence
+      required: false
+      default: true
+      selector:
+        boolean:
+    config_entry_id:
+      name: Config entry ID
+      required: false
+      selector:
+        text:

@@ -67,6 +67,7 @@ from .model import (
 PLATFORMS: list[Platform] = [
     Platform.ALARM_CONTROL_PANEL,
     Platform.BINARY_SENSOR,
+    Platform.BUTTON,
     Platform.SENSOR,
     Platform.SWITCH,
 ]
@@ -185,6 +186,16 @@ async def async_setup(hass: HomeAssistant, config: ConfigEntry):
             await coordinator.siren_off(siren_id)
 
     hass.services.async_register(DOMAIN, "control_siren", _service_control_siren)
+
+    async def _service_one_key_alarm(call):
+        coordinator = _coordinator_for_service(hass, call)
+        enabled = bool(call.data.get("enabled", True))
+        if enabled:
+            await coordinator.one_key_alarm_on()
+        else:
+            await coordinator.one_key_alarm_off()
+
+    hass.services.async_register(DOMAIN, "one_key_alarm", _service_one_key_alarm)
     return True
 
 
@@ -291,6 +302,9 @@ class HikAxProDataUpdateCoordinator(DataUpdateCoordinator):
     ac_power_status: dict | None = None
     hub_batteries: list[dict] = []
     siren_control_supported: dict[int, bool] = {}
+    host_control_cap: dict | None = None
+    one_key_alarm_supported: bool | None = None
+    siren_ctrl_supported: bool | None = None
     use_sub_systems: bool
     auto_bypass_on_arm: bool
 
@@ -327,6 +341,9 @@ class HikAxProDataUpdateCoordinator(DataUpdateCoordinator):
         self.ac_power_status = None
         self.hub_batteries = []
         self.siren_control_supported = {}
+        self.host_control_cap = None
+        self.one_key_alarm_supported = None
+        self.siren_ctrl_supported = None
         super().__init__(
             hass,
             _LOGGER,
@@ -355,7 +372,38 @@ class HikAxProDataUpdateCoordinator(DataUpdateCoordinator):
         _LOGGER.debug(self.device_info)
         self.load_devices()
         self.load_relays()
+        self.load_host_control_capabilities()
         self._update_data()
+
+    def load_host_control_capabilities(self) -> None:
+        """Load HostControlCap (siren / one-key alarm support flags)."""
+        try:
+            endpoint = self.axpro.build_url(
+                f"http://{self.host}" + hikaxpro.consts.Endpoints.HostCapabilities,
+                True,
+            )
+            response = self.axpro.make_request(endpoint, "GET", None, True)
+            if response.status_code != 200:
+                _LOGGER.debug(
+                    "HostControlCap unavailable: HTTP %s", response.status_code
+                )
+                return
+            payload = response.json()
+            cap = payload.get("HostControlCap") if isinstance(payload, dict) else None
+            if not isinstance(cap, dict):
+                return
+            self.host_control_cap = cap
+            if "isSptOneKeyAlarmCtrl" in cap:
+                self.one_key_alarm_supported = bool(cap.get("isSptOneKeyAlarmCtrl"))
+            if "isSptSirenCtrl" in cap:
+                self.siren_ctrl_supported = bool(cap.get("isSptSirenCtrl"))
+            _LOGGER.debug(
+                "HostControlCap one_key=%s siren_ctrl=%s",
+                self.one_key_alarm_supported,
+                self.siren_ctrl_supported,
+            )
+        except Exception:  # noqa: BLE001 - firmware varies
+            _LOGGER.debug("HostControlCap load failed", exc_info=True)
 
     def load_relays(self):
         """Load relays."""
@@ -763,3 +811,48 @@ class HikAxProDataUpdateCoordinator(DataUpdateCoordinator):
                 )
                 return False
             raise
+
+    def _one_key_alarm_call(self, is_enabled: bool) -> JSONResponseStatus:
+        """PUT /ISAPI/SecurityCP/control/oneKeyAlarm with OneKeyAlarm.switch."""
+        endpoint = self.axpro.build_url(
+            f"http://{self.host}/ISAPI/SecurityCP/control/oneKeyAlarm",
+            True,
+        )
+        response = self.axpro.make_request(
+            endpoint,
+            "PUT",
+            {"OneKeyAlarm": {"switch": "open" if is_enabled else "close"}},
+            True,
+        )
+        if response.status_code != 200:
+            raise hikaxpro.errors.UnexpectedResponseCodeError(
+                response.status_code, response.text
+            )
+        _LOGGER.debug(response.text)
+        return JSONResponseStatus.from_dict(response.json())
+
+    async def one_key_alarm_on(self) -> bool:
+        """Trigger panel one-key / panic alarm when supported."""
+        if self.one_key_alarm_supported is False:
+            _LOGGER.warning("One-key alarm not supported by this panel")
+            return False
+        response: JSONResponseStatus = await self.hass.async_add_executor_job(
+            self._one_key_alarm_call, True
+        )
+        ok = response.status_code == 1
+        if ok:
+            self.one_key_alarm_supported = True
+        return ok
+
+    async def one_key_alarm_off(self) -> bool:
+        """Clear / close one-key alarm when supported."""
+        if self.one_key_alarm_supported is False:
+            _LOGGER.warning("One-key alarm not supported by this panel")
+            return False
+        response: JSONResponseStatus = await self.hass.async_add_executor_job(
+            self._one_key_alarm_call, False
+        )
+        ok = response.status_code == 1
+        if ok:
+            self.one_key_alarm_supported = True
+        return ok
