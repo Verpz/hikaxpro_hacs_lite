@@ -11,9 +11,7 @@
             "use_code_arming": "[%key:common::config_flow::data::use_code_arming%]",
             "code": "[%key:common::config_flow::data::code%]",
             "scan_interval": "[%key:common::config_flow::data::scan_interval%]",
-            "allow_subsystems": "Allow subsystems",
-            "auto_bypass_on_arm": "Auto-bypass open zones before arm",
-            "debug": "Debug logging"
+            "allow_subsystems": "Allow subsystems"
           }
         }
       },
@@ -40,9 +38,7 @@
             "use_code_arming": "[%key:common::config_flow::data::use_code_arming%]",
             "code": "[%key:common::config_flow::data::code%]",
             "scan_interval": "[%key:common::config_flow::data::scan_interval%]",
-            "allow_subsystems": "Allow subsystems",
-            "auto_bypass_on_arm": "Auto-bypass open zones before arm",
-            "debug": "Debug logging"
+            "allow_subsystems": "Allow subsystems"
           }
         }
       },

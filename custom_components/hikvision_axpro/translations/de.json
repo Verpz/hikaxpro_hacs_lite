@@ -22,8 +22,7 @@
                     "use_code_arming": "Code zum Aktivieren verwenden",
                     "allow_subsystems": "Bereiche als separate Zonen zum Aktivieren/Deaktivieren einbeziehen",
                     "code": "Code",
-                    "scan_interval": "Scan-Intervall des Systems",
-                    "debug": "Debug-Ausgabe aktivieren"
+                    "scan_interval": "Scan-Intervall des Systems"
                 }
             }
         }
@@ -40,8 +39,7 @@
                     "use_code_arming": "Code zum Aktivieren verwenden",
                     "allow_subsystems": "Bereiche als separate Zonen zum Aktivieren/Deaktivieren einbeziehen",
                     "code": "Code",
-                    "scan_interval": "Scan-Intervall des Systems",
-                    "debug": "Debug-Ausgabe aktivieren"
+                    "scan_interval": "Scan-Intervall des Systems"
                 }
             }
         }

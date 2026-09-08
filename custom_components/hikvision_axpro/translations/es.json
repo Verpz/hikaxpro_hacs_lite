@@ -22,8 +22,7 @@
                     "use_code_arming": "Usar código para armar",
                     "allow_subsystems": "Incluir áreas como zonas separadas para armar/desarmar",
                     "code": "Código",
-                    "scan_interval": "Intervalo de escaneo del sistema",
-                    "debug": "Habilitar salida de depuración"
+                    "scan_interval": "Intervalo de escaneo del sistema"
                 }
             }
         }
@@ -40,8 +39,7 @@
                     "use_code_arming": "Usar código para armar",
                     "allow_subsystems": "Incluir áreas como zonas separadas para armar/desarmar",
                     "code": "Código",
-                    "scan_interval": "Intervalo de escaneo del sistema",
-                    "debug": "Habilitar salida de depuración"
+                    "scan_interval": "Intervalo de escaneo del sistema"
                 }
             }
         }

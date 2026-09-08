@@ -1,17 +1,18 @@
 {
   "domain": "hikvision_axpro",
-  "name": "hikvision_axpro",
+  "name": "Hikvision AX Pro Lite",
   "codeowners": [
-    "@gunkutzeybek",
-    "@petrleocompel"
+    "@Verpz"
   ],
   "config_flow": true,
-  "dependencies": ["http"],
-  "documentation": "https://github.com/petrleocompel/hikaxpro_hacs",
+  "dependencies": [
+    "http"
+  ],
+  "documentation": "https://github.com/Verpz/hikaxpro_hacs_lite",
   "iot_class": "local_polling",
-  "issue_tracker": "https://github.com/petrleocompel/hikaxpro_hacs/issues",
+  "issue_tracker": "https://github.com/Verpz/hikaxpro_hacs_lite/issues",
   "requirements": [
     "hikaxpro==2.3.0"
   ],
-  "version": "3.4.0"
+  "version": "3.4.1"
 }

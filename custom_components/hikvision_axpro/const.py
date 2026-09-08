@@ -4,6 +4,15 @@ from typing import Final
 
 DOMAIN: Final[str] = "hikvision_axpro"
 
+DEFAULT_SCAN_INTERVAL: Final[int] = 120
+MIN_SCAN_INTERVAL: Final[int] = 60
+
+
+def lite_scan_interval(value: float) -> float:
+    """Replace legacy aggressive intervals with the lite default."""
+    return value if value >= MIN_SCAN_INTERVAL else DEFAULT_SCAN_INTERVAL
+
+
 DATA_COORDINATOR: Final[str] = "hikaxpro"
 
 USE_CODE_ARMING: Final[str] = "use_code_arming"
