@@ -1,175 +1,123 @@
 # Hikvision AX Pro Lite
 
-This fork provides basic local alarm state, Arm Home / Stay, Arm Away and Disarm.
-It retains the `hikvision_axpro` domain and `hikaxpro==2.3.0` dependency.
+Basic local alarm control for Home Assistant, with minimal polling of the Hikvision AX Pro panel.
 
-- Only the alarm control panel platform loads. Optional subsystem panels share the same status request.
-- Startup reads the MAC address, device information and subsystem status once each.
-- Background refreshes request only subsystem status, every **120 seconds** by default.
-- Existing intervals below 60 seconds (including 30 seconds) use 120 seconds at runtime. Values of 60 seconds or more are preserved; the options form shows the effective interval.
-- Each successful arm/disarm command requests one coordinator refresh. There is no automatic zone bypass.
-- Zone, peripheral, battery and diagnostic polling and their custom services are disabled. Only the reload service remains.
+This fork is intentionally focused: **see the alarm state, Arm Home / Stay, Arm Away, and Disarm**. It connects directly to the panel over ISAPI; no cloud connection is required by the integration.
 
-Install this fork in place of the original integration, then restart Home Assistant.
-Existing credentials, alarm code settings and alarm entity identifiers are retained.
-Previously registered detector/peripheral entities may remain unavailable in the entity registry;
-this fork does not delete them. Update automations that depended on those entities or services.
-The lite and upstream integrations share a domain and cannot be loaded together.
+## Confirmed working
 
-Status changes made outside Home Assistant can take up to the configured polling interval to appear.
-This change reduces integration requests; firmware responsiveness and real panel operation still
-need to be verified on hardware (including DS-PWA96-M-WB, V1.3.1 build 251113).
+The repository owner has confirmed the lite integration working on:
 
-## Failure handling and multiple areas
+| Panel | Firmware |
+| --- | --- |
+| **DS-PWA96-M-WB** | **V1.3.1 build 251113** |
 
-Invalid, empty or unknown subsystem status marks the alarm unavailable rather than
-reporting disarmed. Exit delay reports `arming`. The main panel aggregates all enabled
-areas, regardless of whether optional subsystem entities are enabled, with precedence:
-triggered, arming, armed away, armed vacation, armed home, then disarmed. Mixed armed
-modes therefore display the highest-priority mode; use subsystem entities for individual
-area states.
+This confirms the owner's installation, not every AX Pro model or firmware combination. If you test another combination, please share the model, firmware and results in this repository's [issues](https://github.com/Verpz/hikaxpro_hacs_lite/issues).
 
-Saved options reload the integration automatically. The pinned client is wrapped locally
-to allow only one authentication retry and to stop after a failed login. Every HTTP call,
-including login, has a 3-second connect and 5-second read timeout. These are socket
-timeouts, not a hard deadline for the whole operation. Calls on each client are serialized;
-we await the worker instead of abandoning it after an asynchronous timeout.
+## Why this fork exists
 
-## Upstream reference
+The full upstream integration polls zones, peripherals and panel diagnostics as well as alarm status. On the owner's V1.3.1 installation, repeated polling coincided with a slow panel web interface and delayed-feeling arm/disarm operation. Disabling the integration improved responsiveness in an A/B test.
 
-The original documentation below describes the full upstream integration. Its sensor,
-peripheral and service features do not apply to this lite fork.
+This fork reduces the work requested from the panel. It does not attempt to fix the firmware or establish the cause of every panel or wireless-zone issue.
 
-# hikaxpro_hacs
-HACS repository of Hikvision Ax Pro integration for home assistant
+## What Home Assistant exposes
 
-**Type**: Local integration (not using any cloud connection - only connecting to device)
-**IOT Class**: `local_polling` aka Pulling data from device in predefined interval (default 30 sec)
+One main `alarm_control_panel` entity supports:
 
-For reporting issue with log please use issues.
-For feature request there is a feature request in issues.
-For other questions checkout first [#FAQ](#faq) section. Otherwise, use [discussions](https://github.com/petrleocompel/hikaxpro_hacs/discussions).
+- **Arm Home / Stay**
+- **Arm Away**
+- **Disarm**
 
-[![hacs_badge](https://img.shields.io/badge/HACS-Custom-41BDF5.svg)](https://github.com/hacs/integration)
+Reported states include disarmed, armed home, armed away, exit delay (`arming`), and triggered when reported by subsystem status. Armed vacation is also displayed if reported by the panel; a vacation command is not exposed.
 
-## Supported devices
-- AX Pro series
-- AX Hub - introduced in version 1.2.0 
+Optional subsystem alarm entities display and control individual areas. They share the same status request and do not add separate polling.
 
-## Support
-- Sub zones control (Opt-in - after configuration reload integration)
+Only the alarm control panel platform loads. Detector/contact/motion entities, batteries, signal strength, relays, sirens, keypads, repeaters, AC diagnostics, switches and buttons are outside this fork's scope. There is no automatic zone bypass or custom bypass, siren or one-key-alarm service. The integration's reload service remains available.
 
-### Supported Sensors / Detectors
-- Wireless external magnetic sensors
-- Wireless slim magnetic sensor
-- Wireless magnet Shock Detector
-- Wireless temperature humidity sensors
-- Wireless PIR sensors
-- Wireless glass break sensors
-- Wireless PIR AM curtain sensor
-- Wireless PIR CAM sensor
-- Wired magnetic contact sensor
-- Wireless Smoke Detector
+## Polling and update delay
 
-### Attributes
-- Alarm
-- Armed
-- Battery
-- Bypass
-- Humidity
-- Is via repeater
-- Magnet presence
-- Signal
-- Stay away
-- Status
-- Tamper
-- Temperature
+| Situation | Behaviour |
+| --- | --- |
+| Startup | Read MAC address and device information, then one initial subsystem-status refresh, plus authentication as needed |
+| Normal background operation | One subsystem-status request every **120 seconds** by default |
+| Successful command from HA | Send the command, then one immediate subsystem-status refresh |
+| Change from keypad or Hik-Connect | Picked up at the next poll; up to **120 seconds** with the default interval |
 
-### Examples
-Example screens of integration. 
+Periodic polling only fetches `/ISAPI/SecurityCP/status/subSystems`. It does not sweep zones, peripherals, batteries or AC status.
 
-**Magnetic Sensor**
-![Magnetic Sensor](https://user-images.githubusercontent.com/9423543/222737996-4eefb9a5-a09a-4713-a87e-71664580aaf2.png)
+The default interval is **120 seconds**, and the configurable minimum is **60 seconds**. Existing stored intervals below 60 seconds, including the old 30-second setting, use 120 seconds at runtime. Values of 60 seconds or more are preserved. The options form shows the effective interval, and saving options reloads the integration automatically.
 
-**PIR Sensor**
-![PIR Sensor](https://user-images.githubusercontent.com/9423543/222738007-1961348c-9e94-46de-9a29-40aedc726e38.png)
-
-**Main System Device**
-![Main System Device](https://user-images.githubusercontent.com/9423543/224548626-823a6cfa-5c15-4a6a-97d2-32831797253c.png)
-
+**Push events are not implemented.** Upstream has investigated AX Pro's event stream, but this fork currently uses polling. An immediate refresh after an HA command may show exit delay; completion is picked up at the next poll.
 
 ## Installation
 
-### Pre-check
-> ⚠️ Please make sure your user you will be using will have role "Admin" and it is not same as "Installer" or remove the "Installer" completely. (Referring to issue #108)
-
-
-#### Firmware
-⚠️ Last working stable FW - `1.2.9 Build: 240621`.
-Warning for now. Newer firmware was reported that causes instabilities. 
-
-
 ### HACS
 
-1. Install HACS if you don't have it already
-2. Open HACS in Home Assistant
-3. Go to "Integrations" section
-4. Click ... button on top right and in menu select "Custom repositories"
-5. Add repository https://github.com/petrleocompel/hikaxpro_hacs and select category "Integration"
-6. Search for "hikaxpro_hacs" and install it
-7. Restart Home Assistant
+1. In HACS, open **Custom repositories**.
+2. Add `https://github.com/Verpz/hikaxpro_hacs_lite` with category **Integration**.
+3. Download this integration from HACS.
+4. Restart Home Assistant.
+5. For a new installation, add **Hikvision AX Pro Lite** under **Settings → Devices & services**.
 
 ### Manual
 
-Download the [zip](https://github.com/petrleocompel/hikaxpro_hacs/archive/refs/heads/master.zip) and extract it. Copy the folder `hikaxpro_hacs` to your `custom_components` folder.
+1. Download the [master branch ZIP](https://github.com/Verpz/hikaxpro_hacs_lite/archive/refs/heads/master.zip) and extract it.
+2. Copy the extracted `custom_components/hikvision_axpro` directory into Home Assistant's `config/custom_components/` directory.
+3. Restart Home Assistant, then add the integration if it is not already configured.
 
-## FAQ
+The installed manifest should be at `config/custom_components/hikvision_axpro/manifest.json`.
 
-### Can I see sensors with this?
-Yes, supported sensors are [listed above](#supported-sensors--detectors).
-> ⚠️ But there is a delay of pulling interval to see the data / the status. 
+### Moving from the upstream integration
 
-### Can I make data appear faster? / Can I speed up updating sensors?
-Yes and No. **Default is 30 seconds**.
+This fork keeps the **`hikvision_axpro` integration domain** and existing alarm entity unique IDs. Existing credentials, alarm codes and subsystem settings remain usable; there is no domain migration or need to recreate the config entry solely to switch forks.
 
-Yes you can lower the `pull interval` via configuration of integration.
-> ⚠️ But you can hit a limit with number of devices and cameras. Your system can become unstable.
-> But I admit some smaller system can run with 2 seconds `pull interval` stable. It also depends on your device. 
+- Replace the upstream integration files with this fork. If using HACS, ensure it manages this repository for future updates.
+- Restart Home Assistant after replacing the files.
+- Update automations that depended on detector/peripheral entities or removed custom services.
+- Old detector/peripheral entries may remain unavailable in HA's entity registry. This fork does not automatically delete them.
 
-Examples:
-- [Real time update and sensor excluding #157](https://github.com/petrleocompel/hikaxpro_hacs/issues/157)
-- [Hikvision IP Cam disconnected by AX Pro #124](https://github.com/petrleocompel/hikaxpro_hacs/issues/124)
+The upstream integration and this fork share a domain and cannot run side by side as separate integrations.
 
-### Is there another way to do it? Receive events only?
-**No**. HikVision does not have that API. Maybe there could be, but I did not find it.
-Documentation of HikVision devices is now behind "partner portal".
-You have to be in partner program and login to get current documentation.  
-I am using old documentation and even there a some API is not documented. Or statuses and attributes.
+## Configuration
 
-I still have some stuff to implement to improve the situation ([found event stream for arm/disarm/alarm #143](https://github.com/petrleocompel/hikaxpro_hacs/issues/143#issuecomment-2539032085)) but this is the current state.
+Supply the panel's local host/IP address and valid panel username/password. Use an account with the permissions required for local alarm control; the integration requests the Admin/Operator user level. These credentials authenticate to the panel, not to Home Assistant Cloud.
 
-### Why do not get in touch with HikVision to improve?
-**Maybe they would have a problem with this integration**. I really do not want to get **DMCA** request.
-Examples:
-- https://www.home-assistant.io/blog/2023/10/13/removal-of-mazda-connected-services-integration/
-- https://github.com/Andre0512/hOn?tab=readme-ov-file#takedown-story
+The existing options for an alarm code, numeric/text code format, requiring the code when arming, scan interval and optional subsystem panels remain available. Alarm code checks in Home Assistant are retained separately from panel login credentials.
 
-### Cannot arm my system with HA.
+If the panel refuses to arm, check its open zones, faults and account permissions in its own interface or Hik-Connect. This integration does not automatically bypass blocking zones.
 
-Check your batteries for devices. Check that all zones are closed / not triggered.
+## State and connection handling
 
-If you use Hik-Connect app - you can press the **diagnosis** button on the "system overview page".
-It will tell you why you cannot arm the system. 
+Invalid, empty or unknown subsystem status marks the alarm **unavailable**, rather than falsely reporting disarmed. A later valid refresh restores availability.
 
-This integration is not bypassing any "zones" so you might have to set it up via "Hik-Connect" / Web interface.
+The main entity represents all enabled areas, even when optional subsystem entities are enabled. Its state is independent of the order returned by the panel, using this precedence:
 
-### Everything seems fine I can arm in "Hik-Connect" app but not in HA.
+**Triggered → Arming → Armed Away → Armed Vacation → Armed Home → Disarmed**
 
-Is installer account in the system ? What account you are using with the integration?
-Sadly to make it work we need to be an Admin user.
+For mixed area states, the highest-priority state is displayed. Enable subsystem entities to see each area separately. Main-panel commands address all areas; subsystem commands address their own area.
 
-Some systems work with login "admin" some with the user who set it up via Hik-Connect account.
-So even your "Hik-Connect" used email address might be the correct one.
+The dependency remains pinned to **`hikaxpro==2.3.0`**. A local client subclass retains its alarm commands and password encoding while limiting authentication recovery to one login attempt and one request retry. A failed login stops the retry path.
 
-But still in "Web Interface" of your device after you log in there should not be and Installer account. 
-If there is and if it has a same email as your user it is the problem and needs to be removed.
+Every HTTP call, including login, has a **3-second connect timeout and 5-second read timeout**. These are socket timeouts, not a hard deadline for a complete operation. Calls on each client are serialized, and the integration awaits the worker rather than abandoning it after an asynchronous timeout.
+
+## Development and validation
+
+Run the tests with:
+
+```sh
+python -m pip install -r test_requirements.txt
+python -m pytest
+python -m compileall -q custom_components
+```
+
+The current suite contains **88 passing tests**, run locally with Python 3.12 and Home Assistant 2025.1.4. A GitHub Actions workflow runs the unit tests alongside the repository's HACS/Hassfest validation workflows.
+
+Regression coverage includes subsystem-only polling, startup request counts, one refresh after commands, code protection, legacy scan intervals, invalid responses, exit delay, multi-area ordering, options reload and bounded authentication/timeouts.
+
+The cold-start transport test exercises **no cookie → status 401 → login capabilities → login → authenticated status retry**. It tests cookies supplied in either the HTTP header or login XML, using real request preparation, parsing, password hashing and serialization with the HTTP transport mocked. Automated tests complement the owner's hardware confirmation; they do not emulate every firmware behaviour.
+
+## Support and credits
+
+Report lite-fork issues in [Verpz/hikaxpro_hacs_lite](https://github.com/Verpz/hikaxpro_hacs_lite/issues). Include panel model, firmware, Home Assistant version and relevant logs with credentials and personal identifiers removed.
+
+Based on [petrleocompel/hikaxpro_hacs](https://github.com/petrleocompel/hikaxpro_hacs), originally forked from [gunkutzeybek/hikaxpro_hacs](https://github.com/gunkutzeybek/hikaxpro_hacs). Thanks to the upstream authors and contributors. Dormant upstream platform and helper code remains to keep future maintenance practical.
