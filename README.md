@@ -1,3 +1,45 @@
+# Hikvision AX Pro Lite
+
+This fork provides basic local alarm state, Arm Home / Stay, Arm Away and Disarm.
+It retains the `hikvision_axpro` domain and `hikaxpro==2.3.0` dependency.
+
+- Only the alarm control panel platform loads. Optional subsystem panels share the same status request.
+- Startup reads the MAC address, device information and subsystem status once each.
+- Background refreshes request only subsystem status, every **120 seconds** by default.
+- Existing intervals below 60 seconds (including 30 seconds) use 120 seconds at runtime. Values of 60 seconds or more are preserved; the options form shows the effective interval.
+- Each successful arm/disarm command requests one coordinator refresh. There is no automatic zone bypass.
+- Zone, peripheral, battery and diagnostic polling and their custom services are disabled. Only the reload service remains.
+
+Install this fork in place of the original integration, then restart Home Assistant.
+Existing credentials, alarm code settings and alarm entity identifiers are retained.
+Previously registered detector/peripheral entities may remain unavailable in the entity registry;
+this fork does not delete them. Update automations that depended on those entities or services.
+The lite and upstream integrations share a domain and cannot be loaded together.
+
+Status changes made outside Home Assistant can take up to the configured polling interval to appear.
+This change reduces integration requests; firmware responsiveness and real panel operation still
+need to be verified on hardware (including DS-PWA96-M-WB, V1.3.1 build 251113).
+
+## Failure handling and multiple areas
+
+Invalid, empty or unknown subsystem status marks the alarm unavailable rather than
+reporting disarmed. Exit delay reports `arming`. The main panel aggregates all enabled
+areas, regardless of whether optional subsystem entities are enabled, with precedence:
+triggered, arming, armed away, armed vacation, armed home, then disarmed. Mixed armed
+modes therefore display the highest-priority mode; use subsystem entities for individual
+area states.
+
+Saved options reload the integration automatically. The pinned client is wrapped locally
+to allow only one authentication retry and to stop after a failed login. Every HTTP call,
+including login, has a 3-second connect and 5-second read timeout. These are socket
+timeouts, not a hard deadline for the whole operation. Calls on each client are serialized;
+we await the worker instead of abandoning it after an asynchronous timeout.
+
+## Upstream reference
+
+The original documentation below describes the full upstream integration. Its sensor,
+peripheral and service features do not apply to this lite fork.
+
 # hikaxpro_hacs
 HACS repository of Hikvision Ax Pro integration for home assistant
 

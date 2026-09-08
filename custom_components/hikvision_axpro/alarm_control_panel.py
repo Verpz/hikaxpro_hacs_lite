@@ -191,6 +191,8 @@ class HikAxProSubPanel(CoordinatorEntity, AlarmControlPanelEntity):
         """Return the state of the device."""
         if self.sys.alarm:
             return AlarmControlPanelState.TRIGGERED
+        if self.sys.arming == Arming.ARMING:
+            return AlarmControlPanelState.ARMING
         if self.sys.arming == Arming.AWAY:
             return AlarmControlPanelState.ARMED_AWAY
         if self.sys.arming == Arming.STAY:

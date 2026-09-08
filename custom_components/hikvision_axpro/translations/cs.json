@@ -22,8 +22,7 @@
                     "use_code_arming": "Kód pro zajištění",
                     "allow_subsystems": "Zahrnutí zón jako samostatných oblastí pro zapnutí/vypnutí alarmů",
                     "code": "Kód",
-                    "scan_interval": "Aktualizační interval",
-                    "debug": "Zapnout debug výstup"
+                    "scan_interval": "Aktualizační interval"
                 }
             }
         }
@@ -40,8 +39,7 @@
                     "use_code_arming": "Kód pro zajištění",
                     "allow_subsystems": "Zahrnutí zón jako samostatných oblastí pro zapnutí/vypnutí alarmů",
                     "code": "Kód",
-                    "scan_interval": "Aktualizační interval",
-                    "debug": "Zapnout debug výstup"
+                    "scan_interval": "Aktualizační interval"
                 }
             }
         }

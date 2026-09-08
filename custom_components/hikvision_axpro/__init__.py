@@ -1,20 +1,15 @@
 """The hikvision_axpro integration."""
 
 import asyncio
-from asyncio import timeout
-import contextlib
-from datetime import timedelta
 import logging
+from datetime import timedelta
 
 import hikaxpro
+import requests
 import xmltodict
-
 from homeassistant.components.alarm_control_panel import (
-    SCAN_INTERVAL,
     AlarmControlPanelState,
 )
-from homeassistant.components.binary_sensor import BinarySensorDeviceClass
-from homeassistant.components.sensor import DOMAIN as SENSOR_DOMAIN
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import (
     ATTR_CODE_FORMAT,
@@ -29,18 +24,17 @@ from homeassistant.const import (
 )
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryNotReady
-import homeassistant.helpers.device_registry as dr
-import homeassistant.helpers.entity_registry as er
 from homeassistant.helpers.service import async_register_admin_service
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
+from .client import AuthenticationError, LiteHikAxPro
 from .const import (
     ALLOW_SUBSYSTEMS,
-    AUTO_BYPASS_ON_ARM,
     DATA_COORDINATOR,
+    DEFAULT_SCAN_INTERVAL,
     DOMAIN,
-    ENABLE_DEBUG_OUTPUT,
     USE_CODE_ARMING,
+    lite_scan_interval,
 )
 from .entity_id import migrate_invalid_entity_ids
 from .model import (
@@ -64,18 +58,8 @@ from .model import (
     ZonesResponse,
 )
 
-PLATFORMS: list[Platform] = [
-    Platform.ALARM_CONTROL_PANEL,
-    Platform.BINARY_SENSOR,
-    Platform.BUTTON,
-    Platform.SENSOR,
-    Platform.SWITCH,
-]
+PLATFORMS: list[Platform] = [Platform.ALARM_CONTROL_PANEL]
 _LOGGER = logging.getLogger(__name__)
-
-
-def _filter_enabled(n: SubSys) -> bool:
-    return n.enabled
 
 
 async def async_setup(hass: HomeAssistant, config: ConfigEntry):
@@ -95,121 +79,8 @@ async def async_setup(hass: HomeAssistant, config: ConfigEntry):
 
         await asyncio.gather(*reload_tasks)
 
-    async def _handle_purge(service):
-        """Handle purge of unwanted entitites."""
-        _LOGGER.info("Service %s.purge called: destroying old entities", DOMAIN)
-        dregistry: dr.DeviceRegistry = dr.async_get(hass)
-        eregistry: er.EntityRegistry = er.async_get(hass)
-
-        current_entries = hass.config_entries.async_entries(DOMAIN)
-        for config in current_entries:
-            devices = dregistry.devices.get_devices_for_config_entry_id(config.entry_id)
-            entities: list[er.RegistryEntry] = []
-            for device in devices:
-                device_ent = eregistry.entities.get_entries_for_device_id(
-                    device.id, True
-                )
-                entities.extend(device_ent)
-
-            invalid_binary_sensors_as_sensor_unique_id_parts = [
-                "-magnet-",
-                "-magnet-shock-",
-                "-magnet-open-",
-                "-magnet-tilt-",
-                "-tamper-",
-                "-bypass-",
-                "-armed-",
-                "-alarm-",
-                "-stayaway-",
-                "-isviarepeater-",
-                "-battery-low-",
-            ]
-            for entity in entities:
-                if entity.domain == SENSOR_DOMAIN and any(
-                    sub_string in entity.unique_id
-                    for sub_string in invalid_binary_sensors_as_sensor_unique_id_parts
-                ):
-                    _LOGGER.info("Service %s.purge: removing entity", entity.entity_id)
-                    eregistry.async_remove(entity.entity_id)
-
-    async_register_admin_service(
-        hass,
-        DOMAIN,
-        SERVICE_RELOAD,
-        _handle_reload,
-    )
-    async_register_admin_service(
-        hass,
-        DOMAIN,
-        "purge",
-        _handle_purge,
-    )
-
-    async def _service_bypass_zone(call):
-        zone_id = int(call.data["zone_id"])
-        coordinator = _coordinator_for_service(hass, call)
-        await coordinator.async_bypass_zone(zone_id)
-
-    async def _service_recover_bypass_zone(call):
-        zone_id = int(call.data["zone_id"])
-        coordinator = _coordinator_for_service(hass, call)
-        await coordinator.async_recover_bypass_zone(zone_id)
-
-    async def _service_arm_away_with_bypass(call):
-        coordinator = _coordinator_for_service(hass, call)
-        sub_id = call.data.get("sub_id")
-        await coordinator.async_arm_away(sub_id=sub_id, with_bypass=True)
-
-    async def _service_arm_home_with_bypass(call):
-        coordinator = _coordinator_for_service(hass, call)
-        sub_id = call.data.get("sub_id")
-        await coordinator.async_arm_home(sub_id=sub_id, with_bypass=True)
-
-    hass.services.async_register(DOMAIN, "bypass_zone", _service_bypass_zone)
-    hass.services.async_register(
-        DOMAIN, "recover_bypass_zone", _service_recover_bypass_zone
-    )
-    hass.services.async_register(
-        DOMAIN, "arm_away_with_bypass", _service_arm_away_with_bypass
-    )
-    hass.services.async_register(
-        DOMAIN, "arm_home_with_bypass", _service_arm_home_with_bypass
-    )
-
-    async def _service_control_siren(call):
-        coordinator = _coordinator_for_service(hass, call)
-        siren_id = int(call.data["siren_id"])
-        enabled = bool(call.data["enabled"])
-        if enabled:
-            await coordinator.siren_on(siren_id)
-        else:
-            await coordinator.siren_off(siren_id)
-
-    hass.services.async_register(DOMAIN, "control_siren", _service_control_siren)
-
-    async def _service_one_key_alarm(call):
-        coordinator = _coordinator_for_service(hass, call)
-        enabled = bool(call.data.get("enabled", True))
-        if enabled:
-            await coordinator.one_key_alarm_on()
-        else:
-            await coordinator.one_key_alarm_off()
-
-    hass.services.async_register(DOMAIN, "one_key_alarm", _service_one_key_alarm)
+    async_register_admin_service(hass, DOMAIN, SERVICE_RELOAD, _handle_reload)
     return True
-
-
-def _coordinator_for_service(
-    hass: HomeAssistant, call
-) -> "HikAxProDataUpdateCoordinator":
-    """Resolve coordinator from optional config_entry_id or the first entry."""
-    entry_id = call.data.get("config_entry_id")
-    if entry_id is None:
-        entries = hass.config_entries.async_entries(DOMAIN)
-        if not entries:
-            raise ValueError("No hikvision_axpro config entries")
-        entry_id = entries[0].entry_id
-    return hass.data[DOMAIN][entry_id][DATA_COORDINATOR]
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
@@ -222,22 +93,21 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     code = entry.data[CONF_CODE]
     use_code_arming = entry.data[USE_CODE_ARMING]
     use_sub_systems = entry.data.get(ALLOW_SUBSYSTEMS, False)
-    auto_bypass_on_arm = entry.data.get(AUTO_BYPASS_ON_ARM, False)
-    axpro = hikaxpro.HikAxPro(
+    axpro = LiteHikAxPro(
         host, username, password, user_level=hikaxpro.USER_LEVEL_ADMIN_OPERATOR
     )
-    update_interval: float = entry.data.get(
-        CONF_SCAN_INTERVAL, SCAN_INTERVAL.total_seconds()
+    update_interval = lite_scan_interval(
+        entry.data.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL)
     )
 
-    if entry.data.get(ENABLE_DEBUG_OUTPUT):
-        with contextlib.suppress(Exception):
-            axpro.set_logging_level(logging.DEBUG)
-
     try:
-        async with timeout(10):
-            mac = await hass.async_add_executor_job(axpro.get_interface_mac_address, 1)
-    except (TimeoutError, ConnectionError) as ex:
+        mac = await hass.async_add_executor_job(axpro.get_interface_mac_address, 1)
+    except (
+        AuthenticationError,
+        requests.RequestException,
+        TimeoutError,
+        ConnectionError,
+    ) as ex:
         raise ConfigEntryNotReady from ex
 
     coordinator = HikAxProDataUpdateCoordinator(
@@ -250,19 +120,25 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         code,
         update_interval,
         use_sub_systems,
-        auto_bypass_on_arm=auto_bypass_on_arm,
+        config_entry=entry,
     )
     try:
-        async with timeout(10):
-            await hass.async_add_executor_job(coordinator.init_device)
-    except (TimeoutError, ConnectionError) as ex:
+        await hass.async_add_executor_job(coordinator.init_device)
+    except (
+        AuthenticationError,
+        requests.RequestException,
+        TimeoutError,
+        ConnectionError,
+    ) as ex:
         raise ConfigEntryNotReady from ex
+    await coordinator.async_config_entry_first_refresh()
     hass.data.setdefault(DOMAIN, {})
     hass.data[DOMAIN][entry.entry_id] = {DATA_COORDINATOR: coordinator}
 
     migrate_invalid_entity_ids(hass, entry)
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+    entry.async_on_unload(entry.add_update_listener(update_listener))
 
     return True
 
@@ -306,7 +182,6 @@ class HikAxProDataUpdateCoordinator(DataUpdateCoordinator):
     one_key_alarm_supported: bool | None = None
     siren_ctrl_supported: bool | None = None
     use_sub_systems: bool
-    auto_bypass_on_arm: bool
 
     def __init__(
         self,
@@ -319,11 +194,12 @@ class HikAxProDataUpdateCoordinator(DataUpdateCoordinator):
         code,
         update_interval: float,
         use_sub_systems=False,
-        auto_bypass_on_arm=False,
+        config_entry=None,
     ) -> None:
         """Initialize global data updater and AXPro API."""
         self.axpro = axpro
         self.state = None
+        self.sub_systems = {}
         self.zone_status = None
         self.host = axpro.host
         self.mac = mac
@@ -332,7 +208,6 @@ class HikAxProDataUpdateCoordinator(DataUpdateCoordinator):
         self.use_code_arming = use_code_arming
         self.code = code
         self.use_sub_systems = use_sub_systems
-        self.auto_bypass_on_arm = auto_bypass_on_arm
         self.sirens = {}
         self.keypads = {}
         self.repeaters = {}
@@ -348,7 +223,8 @@ class HikAxProDataUpdateCoordinator(DataUpdateCoordinator):
             hass,
             _LOGGER,
             name=DOMAIN,
-            update_interval=timedelta(seconds=update_interval),
+            config_entry=config_entry,
+            update_interval=timedelta(seconds=lite_scan_interval(update_interval)),
         )
 
     def _get_device_info(self):
@@ -370,10 +246,6 @@ class HikAxProDataUpdateCoordinator(DataUpdateCoordinator):
         self.device_name = self.device_info["DeviceInfo"]["deviceName"]
         self.device_model = self.device_info["DeviceInfo"]["model"]
         _LOGGER.debug(self.device_info)
-        self.load_devices()
-        self.load_relays()
-        self.load_host_control_capabilities()
-        self._update_data()
 
     def load_host_control_capabilities(self) -> None:
         """Load HostControlCap (siren / one-key alarm support flags)."""
@@ -522,91 +394,44 @@ class HikAxProDataUpdateCoordinator(DataUpdateCoordinator):
         return RelayStatusSearchResponse.from_dict(response.json())
 
     def _update_data(self) -> None:
-        """Fetch data from axpro via sync functions."""
-        status = AlarmControlPanelState.DISARMED
+        """Fetch only subsystem status; never poll zones or peripherals."""
         status_json = self.axpro.subsystem_status()
         try:
-            subsys_resp = SubSystemResponse.from_dict(status_json)
-            subsys_arr: list[SubSys] = []
-            if subsys_resp is not None and subsys_resp.sub_sys_list is not None:
-                subsys_arr = []
-                for sublist in subsys_resp.sub_sys_list:
-                    subsys_arr.append(sublist.sub_sys)
+            response = SubSystemResponse.from_dict(status_json)
+            systems = [item.sub_sys for item in response.sub_sys_list]
+            if not systems or any(system.arming is None for system in systems):
+                raise ValueError("Missing or unknown subsystem state")
+            if len({system.id for system in systems}) != len(systems):
+                raise ValueError("Duplicate subsystem IDs")
+            enabled = [system for system in systems if system.enabled]
+            if not enabled:
+                raise ValueError("No enabled subsystems")
+        except (
+            AssertionError,
+            AttributeError,
+            TypeError,
+            ValueError,
+            KeyError,
+        ) as error:
+            raise UpdateFailed("Invalid AX Pro subsystem status") from error
 
-            subsys_arr = list(filter(_filter_enabled, subsys_arr))
-            self.sub_systems = {}
-            for subsys in subsys_arr:
-                self.sub_systems[subsys.id] = subsys
-                if self.use_sub_systems and subsys.id != 1:
-                    continue
-                if subsys.alarm:
-                    status = AlarmControlPanelState.TRIGGERED
-                elif subsys.arming == Arming.AWAY:
-                    status = AlarmControlPanelState.ARMED_AWAY
-                elif subsys.arming == Arming.STAY:
-                    status = AlarmControlPanelState.ARMED_HOME
-                elif subsys.arming == Arming.VACATION:
-                    status = AlarmControlPanelState.ARMED_VACATION
-            _LOGGER.debug("SubSystem status: %s", subsys_resp)
-        except:
-            _LOGGER.warning("Error getting status: %s", status_json)
-        _LOGGER.debug("Axpro status: %s", status)
-        self.state = status
-
-        zone_response = self.axpro.zone_status()
-        zone_status = ZonesResponse.from_dict(zone_response)
-        self.zone_status = zone_status
-        zones = {}
-        for zone in zone_status.zone_list:
-            zones[zone.zone.id] = zone.zone
-        self.zones = zones
-        _LOGGER.debug("Zones: %s", zone_response)
-        # peripherals from exDevStatus
-        devices_status = self._load_ext_devices_status()
-        relays_status: dict[int, OutputStatusFull] = {}
-        sirens: dict[int, Siren] = {}
-        keypads: dict[int, Keypad] = {}
-        repeaters: dict[int, Repeater] = {}
-        extensions: dict[int, ExtensionModule] = {}
-        if devices_status.ex_dev_status is not None:
-            ex = devices_status.ex_dev_status
-            if ex.output_list is not None:
-                for item in ex.output_list:
-                    if item.output is not None and item.output.id is not None:
-                        relays_status[item.output.id] = item.output
-            if ex.siren_list is not None:
-                for item in ex.siren_list:
-                    if item.siren is not None and item.siren.id is not None:
-                        sirens[item.siren.id] = item.siren
-            if ex.keypad_list is not None:
-                for item in ex.keypad_list:
-                    if item.keypad is not None and item.keypad.id is not None:
-                        keypads[item.keypad.id] = item.keypad
-            if ex.repeater_list is not None:
-                for item in ex.repeater_list:
-                    if item.repeater is not None and item.repeater.id is not None:
-                        repeaters[item.repeater.id] = item.repeater
-            if ex.extension_list is not None:
-                for item in ex.extension_list:
-                    if (
-                        item.extension_module is not None
-                        and item.extension_module.id is not None
-                    ):
-                        extensions[item.extension_module.id] = item.extension_module
-        self.relays_status = relays_status
-        self.sirens = sirens
-        self.keypads = keypads
-        self.repeaters = repeaters
-        self.extensions = extensions
-        _LOGGER.debug("Relay status: %s", relays_status)
-        _LOGGER.debug(
-            "Peripherals sirens=%s keypads=%s repeaters=%s extensions=%s",
-            list(sirens),
-            list(keypads),
-            list(repeaters),
-            list(extensions),
-        )
-        self._update_host_diagnostics()
+        # Aggregate all enabled areas, independent of response order or entity options.
+        # Triggered > exit delay > away > vacation > home > all disarmed.
+        state = AlarmControlPanelState.DISARMED
+        if any(system.alarm for system in enabled):
+            state = AlarmControlPanelState.TRIGGERED
+        else:
+            for arming, candidate in (
+                (Arming.ARMING, AlarmControlPanelState.ARMING),
+                (Arming.AWAY, AlarmControlPanelState.ARMED_AWAY),
+                (Arming.VACATION, AlarmControlPanelState.ARMED_VACATION),
+                (Arming.STAY, AlarmControlPanelState.ARMED_HOME),
+            ):
+                if any(system.arming == arming for system in enabled):
+                    state = candidate
+                    break
+        self.sub_systems = {system.id: system for system in enabled}
+        self.state = state
 
     def _update_host_diagnostics(self) -> None:
         """Best-effort poll of host / AC / hub battery status APIs."""
@@ -650,38 +475,34 @@ class HikAxProDataUpdateCoordinator(DataUpdateCoordinator):
     async def _async_update_data(self) -> None:
         """Fetch data from Axpro."""
         try:
-            async with timeout(10):
-                await self.hass.async_add_executor_job(self._update_data)
-        except ConnectionError as error:
+            await self.hass.async_add_executor_job(self._update_data)
+        except (
+            AuthenticationError,
+            requests.RequestException,
+            ConnectionError,
+        ) as error:
             raise UpdateFailed(error) from error
 
-    async def async_arm_home(self, sub_id: int | None = None, with_bypass: bool = False):
+    async def async_arm_home(self, sub_id: int | None = None):
         """Arm alarm panel in home state."""
-        if with_bypass or self.auto_bypass_on_arm:
-            await self.async_bypass_blocking_zones()
         is_success = await self.hass.async_add_executor_job(self.axpro.arm_home, sub_id)
 
         if is_success:
-            await self._async_update_data()
-            await self.async_request_refresh()
+            await self.async_refresh()
 
-    async def async_arm_away(self, sub_id: int | None = None, with_bypass: bool = False):
+    async def async_arm_away(self, sub_id: int | None = None):
         """Arm alarm panel in away state."""
-        if with_bypass or self.auto_bypass_on_arm:
-            await self.async_bypass_blocking_zones()
         is_success = await self.hass.async_add_executor_job(self.axpro.arm_away, sub_id)
 
         if is_success:
-            await self._async_update_data()
-            await self.async_request_refresh()
+            await self.async_refresh()
 
     async def async_disarm(self, sub_id: int | None = None):
         """Disarm alarm control panel."""
         is_success = await self.hass.async_add_executor_job(self.axpro.disarm, sub_id)
 
         if is_success:
-            await self._async_update_data()
-            await self.async_request_refresh()
+            await self.async_refresh()
 
     def _zones_blocking_arm(self) -> list[int]:
         """Return zone IDs that typically prevent arming when left open/triggered."""

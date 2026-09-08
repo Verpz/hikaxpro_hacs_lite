@@ -22,8 +22,7 @@
                     "use_code_arming": "Utiliser un code pour armer",
                     "allow_subsystems": "Inclure des zones comme des zones distinctes pour armer/désarmer",
                     "code": "Code",
-                    "scan_interval": "Intervalle de balayage du système",
-                    "debug": "Activer la sortie de débogage"
+                    "scan_interval": "Intervalle de balayage du système"
                 }
             }
         }
@@ -40,8 +39,7 @@
                     "use_code_arming": "Utiliser un code pour armer",
                     "allow_subsystems": "Inclure des zones comme des zones distinctes pour armer/désarmer",
                     "code": "Code",
-                    "scan_interval": "Intervalle de balayage du système",
-                    "debug": "Activer la sortie de débogage"
+                    "scan_interval": "Intervalle de balayage du système"
                 }
             }
         }

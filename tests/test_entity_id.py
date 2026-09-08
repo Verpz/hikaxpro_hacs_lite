@@ -17,6 +17,16 @@ COMPONENT = ROOT / "custom_components" / "hikvision_axpro"
 
 def _install_ha_stubs() -> None:
     """Minimal homeassistant stubs so entity_id can load without full HA."""
+    try:
+        import homeassistant.config_entries
+        import homeassistant.core
+        import homeassistant.helpers.entity_registry
+        import homeassistant.util
+    except ModuleNotFoundError:
+        pass
+    else:
+        return
+
     _ha = types.ModuleType("homeassistant")
     _ha_config_entries = types.ModuleType("homeassistant.config_entries")
     _ha_core = types.ModuleType("homeassistant.core")
@@ -72,7 +82,8 @@ def test_normalized_object_id_slugifies() -> None:
     assert re.fullmatch(r"[a-z0-9_]+", normalized_object_id("Český ***", "Zone 7"))
 
 
-def test_normalized_object_id_fallback_hash() -> None:
+def test_normalized_object_id_fallback_hash(monkeypatch) -> None:
+    monkeypatch.setattr(entity_id, "slugify", lambda value: "")
     result = normalized_object_id("***", fallback="")
     assert result.startswith("entity_")
     assert re.fullmatch(r"[a-z0-9_]+", result)

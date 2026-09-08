@@ -1,27 +1,32 @@
 """Config flow for hikvision_axpro integration."""
+
 import logging
 from typing import Any
 
 import voluptuous as vol
-
-import hikaxpro
-
 from homeassistant import config_entries
+from homeassistant.const import (
+    ATTR_CODE_FORMAT,
+    CONF_CODE,
+    CONF_ENABLED,
+    CONF_HOST,
+    CONF_PASSWORD,
+    CONF_SCAN_INTERVAL,
+    CONF_USERNAME,
+)
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.data_entry_flow import FlowResult
 from homeassistant.exceptions import HomeAssistantError
-from homeassistant.const import (
-    CONF_CODE,
-    CONF_ENABLED,
-    ATTR_CODE_FORMAT,
-    CONF_HOST,
-    CONF_USERNAME,
-    CONF_PASSWORD,
-    CONF_SCAN_INTERVAL,
-)
-from homeassistant.components.alarm_control_panel import SCAN_INTERVAL
 
-from .const import DOMAIN, USE_CODE_ARMING, ALLOW_SUBSYSTEMS, ENABLE_DEBUG_OUTPUT, AUTO_BYPASS_ON_ARM
+from .client import LiteHikAxPro
+from .const import (
+    ALLOW_SUBSYSTEMS,
+    DEFAULT_SCAN_INTERVAL,
+    DOMAIN,
+    MIN_SCAN_INTERVAL,
+    USE_CODE_ARMING,
+    lite_scan_interval,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -34,9 +39,10 @@ STEP_USER_DATA_SCHEMA = vol.Schema(
         vol.Optional(ATTR_CODE_FORMAT, default="NUMBER"): vol.In(["TEXT", "NUMBER"]),
         vol.Optional(CONF_CODE, default=""): str,
         vol.Optional(USE_CODE_ARMING, default=False): bool,
-        vol.Required(CONF_SCAN_INTERVAL, default=SCAN_INTERVAL.total_seconds()): int,
+        vol.Required(CONF_SCAN_INTERVAL, default=DEFAULT_SCAN_INTERVAL): vol.All(
+            int, vol.Range(min=MIN_SCAN_INTERVAL)
+        ),
         vol.Optional(ALLOW_SUBSYSTEMS, default=False): bool,
-        vol.Optional(AUTO_BYPASS_ON_ARM, default=False): bool,
     }
 )
 
@@ -50,10 +56,10 @@ CONFIGURE_SCHEMA = vol.Schema(
         vol.Optional(ATTR_CODE_FORMAT, default="NUMBER"): vol.In(["TEXT", "NUMBER"]),
         vol.Optional(CONF_CODE, default=""): str,
         vol.Optional(USE_CODE_ARMING, default=False): bool,
-        vol.Required(CONF_SCAN_INTERVAL, default=SCAN_INTERVAL.total_seconds()): int,
+        vol.Required(CONF_SCAN_INTERVAL, default=DEFAULT_SCAN_INTERVAL): vol.All(
+            int, vol.Range(min=MIN_SCAN_INTERVAL)
+        ),
         vol.Optional(ALLOW_SUBSYSTEMS, default=False): bool,
-        vol.Optional(AUTO_BYPASS_ON_ARM, default=False): bool,
-        vol.Optional(ENABLE_DEBUG_OUTPUT, default=False): bool,
     }
 )
 
@@ -87,7 +93,7 @@ class AxProHub:
         self.host = host
         self.username = username
         self.password = password
-        self.axpro = hikaxpro.HikAxPro(host, username, password)
+        self.axpro = LiteHikAxPro(host, username, password)
         self.hass = hass
 
     async def authenticate(self) -> bool:
@@ -115,15 +121,7 @@ async def validate_input(hass: HomeAssistant, data: dict[str, Any]) -> dict[str,
         ):
             raise InvalidCode
 
-
     hub = AxProHub(data[CONF_HOST], data[CONF_USERNAME], data[CONF_PASSWORD], hass)
-
-    if data.get(ENABLE_DEBUG_OUTPUT):
-        try:
-            hub.axpro.set_logging_level(logging.DEBUG)
-        except:
-            pass
-
 
     if not await hub.authenticate():
         raise InvalidAuth
@@ -181,6 +179,9 @@ class AxProOptionsFlowHandler(config_entries.OptionsFlow):
     async def async_step_init(self, user_input=None):
         """Manage basic options."""
         defaults = self.config_entry.data.copy()
+        defaults[CONF_SCAN_INTERVAL] = lite_scan_interval(
+            defaults.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL)
+        )
         defaults.update(user_input or {})
 
         if user_input is None:
@@ -204,7 +205,7 @@ class AxProOptionsFlowHandler(config_entries.OptionsFlow):
             _LOGGER.exception("Unexpected exception")
             errors["base"] = "unknown"
         else:
-            _LOGGER.debug("Saving options %s %s",info["title"], user_input)
+            _LOGGER.debug("Saving options %s", info["title"])
 
             self.hass.config_entries.async_update_entry(
                 self.config_entry,
@@ -215,9 +216,8 @@ class AxProOptionsFlowHandler(config_entries.OptionsFlow):
         return self.async_show_form(
             step_id="init",
             data_schema=schema_defaults(CONFIGURE_SCHEMA, None, **defaults),
-            errors=errors
+            errors=errors,
         )
-
 
 
 class CannotConnect(HomeAssistantError):

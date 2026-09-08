@@ -22,8 +22,7 @@
                     "use_code_arming": "Use code for arming",
                     "allow_subsystems": "Include areas as separate zones for arm/disarm",
                     "code": "Code",
-                    "scan_interval": "Pull interval from system",
-                    "debug": "Enable debug output"
+                    "scan_interval": "Pull interval from system"
                 }
             }
         }
@@ -40,8 +39,7 @@
                     "use_code_arming": "Use code for arming",
                     "allow_subsystems": "Include areas as separate zones for arm/disarm",
                     "code": "Code",
-                    "scan_interval": "Pull interval from system",
-                    "debug": "Enable debug output"
+                    "scan_interval": "Pull interval from system"
                 }
             }
         }
